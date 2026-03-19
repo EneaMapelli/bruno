@@ -3,26 +3,14 @@ name: Build Electron (Windows)
 on:
   workflow_dispatch:
   push:
-    branches: [main, 'release/v*']
-    paths:
-      - 'packages/bruno-electron/**'
-      - 'packages/bruno-app/**'
-      - 'packages/bruno-common/**'
-      - 'packages/bruno-js/**'
-      - 'packages/bruno-converters/**'
-      - 'packages/bruno-requests/**'
-      - 'packages/bruno-schema-types/**'
-      - 'packages/bruno-filestore/**'
-      - 'packages/bruno-graphql-docs/**'
-      - 'scripts/build-electron.sh'
-      - '.github/workflows/build-electron-win.yml'
+    branches: [main, 'release/v*', 'copilot/check-workspace-blocks']
 
 jobs:
   build-win:
     name: Build Windows Installer
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write   # needed to create GitHub Releases and upload assets
 
     steps:
       - uses: actions/checkout@v4
@@ -56,9 +44,33 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Read version from package.json
+        id: pkg
+        shell: bash
+        run: echo "version=$(node -p "require('./packages/bruno-electron/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Upload as a workflow artifact (accessible from the Actions tab)
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: bruno-windows-installer
           path: packages/bruno-electron/out/*.exe
           retention-days: 30
+
+      # Also publish a GitHub Release so the .exe has a permanent download URL
+      # at https://github.com/EneaMapelli/bruno/releases
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.pkg.outputs.version }}-win
+          name: Bruno ${{ steps.pkg.outputs.version }} (Windows)
+          draft: false
+          prerelease: ${{ github.ref_name != 'main' }}
+          body: |
+            Windows installer for Bruno ${{ steps.pkg.outputs.version }}.
+
+            ## Download
+            Click the `.exe` asset below to download the installer.
+
+            Built from commit ${{ github.sha }} on branch `${{ github.ref_name }}`.
+          files: packages/bruno-electron/out/*.exe
